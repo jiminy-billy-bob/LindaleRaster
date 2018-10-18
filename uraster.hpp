@@ -1,5 +1,4 @@
-#ifndef URASTER_HPP
-#define URASTER_HPP
+#pragma once
 
 #include<iostream>
 #include<Eigen/Dense>
@@ -9,11 +8,11 @@
 #include<memory>
 #include<functional>
 
-namespace uraster
+namespace LindaleRaster
 {
 
 
-//This is the framebuffer class.  It's a part of namespace uraster because the uraster needs to have a well-defined image class to render to.
+//This is the framebuffer class.  It's a part of namespace LindaleRaster because the LindaleRaster needs to have a well-defined image class to render to.
 //It is templated because the output type need not be only colors, could contain anything (like a stencil buffer or depth buffer or gbuffer for deferred rendering)
 template<class PixelType>
 class Framebuffer
@@ -45,10 +44,10 @@ public:
 };
 
 //This function runs the vertex shader on all the vertices, producing the varyings that will be interpolated by the rasterizer.
-//VertexVsIn can be anything, VertexVsOut MUST have a position() method that returns a 4D vector, and it must have an overloaded *= and += operator for the interpolation
-//The right way to think of VertexVsOut is that it is the class you write containing the varying outputs from the vertex shader.
-template<class VertexVsIn,class VertexVsOut,class VertShader>
-void run_vertex_shader(const VertexVsIn* b,const VertexVsIn* e,VertexVsOut* o,
+//Vert can be anything, VertShaderOut MUST have a position() method that returns a 4D vector, and it must have an overloaded *= and += operator for the interpolation
+//The right way to think of VertShaderOut is that it is the class you write containing the varying outputs from the vertex shader.
+template<class Vert,class VertShaderOut,class VertShader>
+void run_vertex_shader(const Vert* b,const Vert* e,VertShaderOut* o,
 	VertShader vertex_shader)
 {
 	std::size_t n=e-b;
@@ -80,8 +79,8 @@ public:
 };
 //This function takes in 3 varyings vertices from the fragment shader that make up a triangle,
 //rasterizes the triangle and runs the fragment shader on each resulting pixel.
-template<class PixelOut,class VertexVsOut,class FragShader>
-void rasterize_triangle(Framebuffer<PixelOut>& fb,const std::array<VertexVsOut,3>& verts,FragShader fragment_shader)
+template<class PixelOut,class VertShaderOut,class FragShader>
+void rasterize_triangle(Framebuffer<PixelOut>& fb,const std::array<VertShaderOut,3>& verts,FragShader fragment_shader)
 {
 	std::array<Eigen::Vector4f,3> points{{verts[0].position(),verts[1].position(),verts[2].position()}};
 	//Do the perspective divide by w to get screen space coordinates.
@@ -128,9 +127,9 @@ void rasterize_triangle(Framebuffer<PixelOut>& fb,const std::array<VertexVsOut,3
 			if(po.depth() < d && d < 1.0)
 			{
 				//interpolate varying parameters
-				VertexVsOut v=verts[0];
+				VertShaderOut v=verts[0];
 				v*=bary[0];
-				VertexVsOut vt=verts[1];
+				VertShaderOut vt=verts[1];
 				vt*=bary[1];
 				v+=vt;
 				vt=verts[2];
@@ -147,8 +146,8 @@ void rasterize_triangle(Framebuffer<PixelOut>& fb,const std::array<VertexVsOut,3
 
 
 //This function rasterizes a set of triangles determined by an index buffer and a buffer of output verts.
-template<class PixelOut,class VertexVsOut,class FragShader>
-void rasterize(Framebuffer<PixelOut>& fb,const std::size_t* ib,const std::size_t* ie,const VertexVsOut* verts,
+template<class PixelOut,class VertShaderOut,class FragShader>
+void rasterize(Framebuffer<PixelOut>& fb,const std::size_t* ib,const std::size_t* ie,const VertShaderOut* verts,
 	FragShader fragment_shader)
 {
 	std::size_t n=ie-ib;
@@ -156,29 +155,24 @@ void rasterize(Framebuffer<PixelOut>& fb,const std::size_t* ib,const std::size_t
 	for(std::size_t i=0;i<n;i+=3)
 	{
 		const std::size_t* ti=ib+i;
-		std::array<VertexVsOut,3> tri{{verts[ti[0]],verts[ti[1]],verts[ti[2]]}};
+		std::array<VertShaderOut,3> tri{{verts[ti[0]],verts[ti[1]],verts[ti[2]]}};
 		rasterize_triangle(fb,tri,fragment_shader);
 	}
 }
 
 //This function does a draw call from an indexed buffer
-template<class PixelOut,class VertexVsOut,class VertexVsIn,class VertShader, class FragShader>
+template<class PixelOut, class VertShaderOut, class Vert, class VertShader, class FragShader>
 void draw(	Framebuffer<PixelOut>& fb,
-		const VertexVsIn* vertexbuffer_b,const VertexVsIn* vertexbuffer_e,
-		const std::size_t* indexbuffer_b,const std::size_t* indexbuffer_e,
-		VertexVsOut* vcache_b,VertexVsOut* vcache_e,
-		VertShader vertex_shader,
-		FragShader fragment_shader)
-{
-	std::unique_ptr<VertexVsOut[]> vc;
-	if(vcache_b==NULL || (vcache_e-vcache_b) != (vertexbuffer_e-vertexbuffer_b))
-	{
-		vcache_b=new VertexVsOut[(vertexbuffer_e-vertexbuffer_b)];
-		vc.reset(vcache_b);
-	}
-	run_vertex_shader(vertexbuffer_b,vertexbuffer_e,vcache_b,vertex_shader);
-	rasterize(fb,indexbuffer_b,indexbuffer_e,vcache_b,fragment_shader);
-}
+            const std::vector<Vert>* vertexbuffer,
+            const std::vector<int>* facebuffer,
+		    VertShader vertex_shader,
+		    FragShader fragment_shader)
+    {
+        std::vector<VertShaderOut> vertShaders;
+        vertShaders.resize(vertexbuffer->size());
+	    run_vertex_shader(vertexbuffer, vertShaders, vertex_shader);
+	    rasterize(fb, facebuffer, vertShaders, fragment_shader);
+    }
 
 }
 
