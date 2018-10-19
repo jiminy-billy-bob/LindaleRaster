@@ -4,6 +4,8 @@
 
 #pragma once
 
+#define NOMINMAX // TODO fix the min/max messup with CImg
+
 #include <iostream>
 #define cimg_use_jpeg
 #define cimg_use_xshm
@@ -15,7 +17,7 @@
 #include <memory>
 #include <functional>
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h" 
+#include "stb_image_write.h"
 
 namespace LindaleRaster
 {
@@ -160,7 +162,7 @@ namespace LindaleRaster
 
     // This function takes in 3 varyings vertices from the fragment shader that make up a triangle,
     // rasterizes the triangle and runs the fragment shader on each resulting pixel.
-    void rasterize_triangle(Framebuffer& fb, const std::array<VertShaderOut, 3>& verts)
+    void rasterize_triangle(Framebuffer& fb, const std::array<VertShaderOut, 3>& verts, cimg_library::CImg<uint8_t>* texture)
     {
         std::array<Eigen::Vector4f, 3> points{ {verts[0].position(),verts[1].position(),verts[2].position()} };
         //Do the perspective divide by w to get screen space coordinates.
@@ -181,8 +183,6 @@ namespace LindaleRaster
         // clamp the bounding box to the framebuffer size if necessary (this is clipping.  Not quite how the GPU actually does it but same effect sorta).
         ibb_ul = ibb_ul.max(Eigen::Array2i(0, 0));
         ibb_lr = ibb_lr.min(isz);
-
-        cimg_library::CImg<uint8_t> texture("C:/woodgrain.jpg");
 
         BarycentricTransform bt(ss1.matrix(), ss2.matrix(), ss3.matrix());
 
@@ -218,7 +218,7 @@ namespace LindaleRaster
                         v += vt;
 
                         // call the fragment shader
-                        po = fragment_shader(v, texture);
+                        po = fragment_shader(v, *texture);
                         po.depth() = d; //write the depth buffer
                     }
                 }
@@ -227,13 +227,13 @@ namespace LindaleRaster
 
 
     // This function rasterizes a set of triangles determined by an index buffer and a buffer of output verts.
-    void rasterize(Framebuffer& fb, std::vector<int>* indices, std::vector<VertShaderOut>* verts)
+    void rasterize(Framebuffer& fb, std::vector<int>* indices, std::vector<VertShaderOut>* verts, cimg_library::CImg<uint8_t>* texture)
     {
 #pragma omp parallel for
         for (std::size_t i = 0; i < indices->size(); i += 3)
         {
             std::array<VertShaderOut, 3> tri{ { verts->at(indices->at(i)), verts->at(indices->at(i + 1)), verts->at(indices->at(i + 2)) } };
-            rasterize_triangle(fb, tri);
+            rasterize_triangle(fb, tri, texture);
         }
     }
 
@@ -241,12 +241,13 @@ namespace LindaleRaster
     // This function does a draw call from an indexed buffer
     void draw(Framebuffer& fb,
         std::vector<Vert>* vertexbuffer,
-        std::vector<int>* facebuffer)
+        std::vector<int>* facebuffer,
+        cimg_library::CImg<uint8_t>* texture)
     {
         std::vector<VertShaderOut> vertShaders;
         vertShaders.resize(vertexbuffer->size());
         run_vertex_shader(vertexbuffer, &vertShaders);
-        rasterize(fb, facebuffer, &vertShaders);
+        rasterize(fb, facebuffer, &vertShaders, texture);
     }
 
 
